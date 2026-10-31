@@ -3,9 +3,10 @@ package httptransport
 import (
 	"encoding/json"
 	"errors"
-	"example.com/gogoproject/internal/platform/fault"
 	"log/slog"
 	"net/http"
+
+	"example.com/gogoproject/internal/platform/fault"
 )
 
 func fail(w http.ResponseWriter, err error) {
@@ -22,6 +23,7 @@ func fail(w http.ResponseWriter, err error) {
 	}
 	respond(w, status, map[string]string{"error": message})
 }
+
 func respond(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)

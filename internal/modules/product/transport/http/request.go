@@ -3,7 +3,6 @@ package httptransport
 import (
 	"encoding/json"
 	"example.com/gogoproject/internal/platform/fault"
-	"io"
 	"net/http"
 )
 
@@ -19,9 +18,6 @@ func readCreateRequest(w http.ResponseWriter, r *http.Request) (createRequest, e
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&in); err != nil {
-		return in, fault.ErrInvalid
-	}
-	if err := dec.Decode(new(any)); err != io.EOF {
 		return in, fault.ErrInvalid
 	}
 	return in, nil

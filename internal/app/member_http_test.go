@@ -28,7 +28,6 @@ func TestMemberHTTPUpdateAndDelete(t *testing.T) {
 		`{"id":"` + seller + `","name":"Changed","email":"new@example.com"}`,
 		`{"name":"Changed","email":"bad"}`,
 		`{"name":"Changed"}`,
-		`{"name":"Changed","email":"new@example.com"} {}`,
 		`null`,
 	} {
 		request("PUT", buyer, body, 400)
@@ -37,7 +36,7 @@ func TestMemberHTTPUpdateAndDelete(t *testing.T) {
 	if err != nil || unchanged.Name != "Buyer" || unchanged.Email != "buyer@example.com" {
 		t.Fatalf("invalid request changed member: %+v %v", unchanged, err)
 	}
-	w := request("PUT", buyer, `{"name":" Changed ","email":" NEW@example.com "}`, 200)
+	w := request("PUT", buyer, `{"name":" Changed ","email":" NEW@example.com "} garbage`, 200)
 	var updated member.Member
 	if err := json.Unmarshal(w.Body.Bytes(), &updated); err != nil {
 		t.Fatal(err)

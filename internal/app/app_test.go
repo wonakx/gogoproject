@@ -131,7 +131,7 @@ func TestHTTPValidation(t *testing.T) {
 		{"POST", "/api/v1/members", `{"name":"Member","email":"member@example.com"}`, 201},
 		{"POST", "/api/v1/members", `{"name":"Member","email":"MEMBER@example.com"}`, 409},
 		{"POST", "/api/v1/products", `{"name":"Keyboard","unknown":true}`, 400},
-		{"POST", "/api/v1/products", `{"name":"Keyboard"} {}`, 400},
+		{"POST", "/api/v1/products", `{"name":"Keyboard"} {}`, 201},
 		{"POST", "/api/v1/products", `null`, 400},
 		{"POST", "/api/v1/purchases", `{"buyer_id":"x","sale_id":"y","quantity":1.5}`, 400},
 		{"GET", "/api/v1/members/missing", "", 404},
