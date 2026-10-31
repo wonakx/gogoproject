@@ -128,13 +128,13 @@ func TestHTTPValidation(t *testing.T) {
 		status             int
 	}{
 		{"GET", "/health", "", 200},
-		{"POST", "/members", `{"name":"Member","email":"member@example.com"}`, 201},
-		{"POST", "/members", `{"name":"Member","email":"MEMBER@example.com"}`, 409},
-		{"POST", "/products", `{"name":"Keyboard","unknown":true}`, 400},
-		{"POST", "/products", `{"name":"Keyboard"} {}`, 400},
-		{"POST", "/products", `null`, 400},
-		{"POST", "/purchases", `{"buyer_id":"x","sale_id":"y","quantity":1.5}`, 400},
-		{"GET", "/members/missing", "", 404},
+		{"POST", "/api/v1/members", `{"name":"Member","email":"member@example.com"}`, 201},
+		{"POST", "/api/v1/members", `{"name":"Member","email":"MEMBER@example.com"}`, 409},
+		{"POST", "/api/v1/products", `{"name":"Keyboard","unknown":true}`, 400},
+		{"POST", "/api/v1/products", `{"name":"Keyboard"} {}`, 400},
+		{"POST", "/api/v1/products", `null`, 400},
+		{"POST", "/api/v1/purchases", `{"buyer_id":"x","sale_id":"y","quantity":1.5}`, 400},
+		{"GET", "/api/v1/members/missing", "", 404},
 	} {
 		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
 		w := httptest.NewRecorder()
@@ -144,6 +144,42 @@ func TestHTTPValidation(t *testing.T) {
 		}
 		if w.Header().Get("Content-Type") != "application/json; charset=utf-8" {
 			t.Fatal("missing JSON content type")
+		}
+	}
+}
+
+func TestVersionedResourceRoutes(t *testing.T) {
+	a, seller, buyer, saleID := fixture(t, 3)
+	order, err := a.Purchases.Create(buyer, saleID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := a.Handler()
+	for _, path := range []string{
+		"/api/v1/members/" + seller,
+		"/api/v1/products/" + order.ProductID,
+		"/api/v1/sales/" + saleID,
+		"/api/v1/purchases/" + order.ID,
+	} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		if w.Code != 200 {
+			t.Errorf("GET %s: %d %s", path, w.Code, w.Body.String())
+		}
+	}
+	for _, tc := range []struct {
+		method, path string
+		status       int
+	}{
+		{"GET", "/members/" + seller, 404},
+		{"GET", "/api/v2/members/" + seller, 404},
+		{"DELETE", "/api/v1/members/" + seller, 405},
+		{"GET", "/api/v1/health", 404},
+	} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, nil))
+		if w.Code != tc.status {
+			t.Errorf("%s %s: got %d, want %d", tc.method, tc.path, w.Code, tc.status)
 		}
 	}
 }

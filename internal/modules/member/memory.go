@@ -1,8 +1,9 @@
 package member
 
 import (
-	"example.com/gogoproject/internal/platform/fault"
 	"sync"
+
+	"example.com/gogoproject/internal/platform/fault"
 )
 
 type MemoryRepository struct {
@@ -32,4 +33,28 @@ func (r *MemoryRepository) Get(id string) (Member, error) {
 		return Member{}, fault.ErrNotFound
 	}
 	return m, nil
+}
+
+func (r *MemoryRepository) Update(m Member) (Member, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if _, ok := r.members[m.ID]; !ok {
+		r.members[m.ID] = m
+		return r.members[m.ID], nil
+	}
+
+	return Member{}, fault.ErrNotFound
+}
+
+func (r *MemoryRepository) Delete(id string) (Member, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if _, ok := r.members[id]; !ok {
+		delete(r.members, id)
+		return r.members[id], nil
+	}
+
+	return Member{}, fault.ErrNotFound
 }
