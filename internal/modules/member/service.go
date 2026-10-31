@@ -50,6 +50,23 @@ func (s *Service) Get(id string) (Member, error) {
 	return s.repo.Get(id)
 }
 
-func (s *Service) Update(m Member) (Member, error) {
+// UpdateInput is independent of HTTP and represents the member update use case.
+type UpdateInput struct {
+	ID    string
+	Name  string
+	Email string
+}
 
+func (s *Service) Update(in UpdateInput) (Member, error) {
+	m := Member{ID: in.ID, Name: in.Name, Email: in.Email}
+	m.Name, m.Email = strings.TrimSpace(m.Name), strings.ToLower(strings.TrimSpace(m.Email))
+	address, err := mail.ParseAddress(m.Email)
+	if m.ID == "" || m.Name == "" || err != nil || address.Address != m.Email {
+		return Member{}, fmt.Errorf("%w: id, name and valid email required", fault.ErrInvalid)
+	}
+	return s.repo.Update(m)
+}
+
+func (s *Service) Delete(id string) error {
+	return s.repo.Delete(id)
 }

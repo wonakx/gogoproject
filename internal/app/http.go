@@ -1,13 +1,13 @@
 package app
 
 import (
+	"encoding/json"
 	"net/http"
 
 	memberhttp "example.com/gogoproject/internal/modules/member/transport/http"
 	producthttp "example.com/gogoproject/internal/modules/product/transport/http"
 	purchasehttp "example.com/gogoproject/internal/modules/purchase/transport/http"
 	salehttp "example.com/gogoproject/internal/modules/sale/transport/http"
-	"example.com/gogoproject/internal/platform/httpjson"
 )
 
 const apiPrefix = "/api/v1"
@@ -21,7 +21,8 @@ func (a *App) Handler() http.Handler {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
-		httpjson.Respond(w, http.StatusOK, map[string]string{"status": "ok"})
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 	mux.Handle(apiPrefix+"/", http.StripPrefix(apiPrefix, api))
 	return mux

@@ -173,7 +173,7 @@ func TestVersionedResourceRoutes(t *testing.T) {
 	}{
 		{"GET", "/members/" + seller, 404},
 		{"GET", "/api/v2/members/" + seller, 404},
-		{"DELETE", "/api/v1/members/" + seller, 405},
+		{"PATCH", "/api/v1/members/" + seller, 405},
 		{"GET", "/api/v1/health", 404},
 	} {
 		w := httptest.NewRecorder()

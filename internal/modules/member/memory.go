@@ -25,6 +25,7 @@ func (r *MemoryRepository) Create(m Member) error {
 	r.emails[m.Email] = m.ID
 	return nil
 }
+
 func (r *MemoryRepository) Get(id string) (Member, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -36,25 +37,29 @@ func (r *MemoryRepository) Get(id string) (Member, error) {
 }
 
 func (r *MemoryRepository) Update(m Member) (Member, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	if _, ok := r.members[m.ID]; !ok {
-		r.members[m.ID] = m
-		return r.members[m.ID], nil
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	previous, ok := r.members[m.ID]
+	if !ok {
+		return Member{}, fault.ErrNotFound
 	}
-
-	return Member{}, fault.ErrNotFound
+	if owner, exists := r.emails[m.Email]; exists && owner != m.ID {
+		return Member{}, fault.ErrConflict
+	}
+	delete(r.emails, previous.Email)
+	r.members[m.ID] = m
+	r.emails[m.Email] = m.ID
+	return m, nil
 }
 
-func (r *MemoryRepository) Delete(id string) (Member, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	if _, ok := r.members[id]; !ok {
-		delete(r.members, id)
-		return r.members[id], nil
+func (r *MemoryRepository) Delete(id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	m, ok := r.members[id]
+	if !ok {
+		return fault.ErrNotFound
 	}
-
-	return Member{}, fault.ErrNotFound
+	delete(r.members, id)
+	delete(r.emails, m.Email)
+	return nil
 }

@@ -1,24 +1,33 @@
-// Package httptransport exposes the purchase module over HTTP.
+// Package httptransport adapts HTTP requests to purchase use cases.
 package httptransport
 
 import (
-	"net/http"
-
 	"example.com/gogoproject/internal/modules/purchase"
-	"example.com/gogoproject/internal/platform/httpjson"
+	"net/http"
 )
 
-type createRequest struct {
-	BuyerID  string `json:"buyer_id"`
-	SaleID   string `json:"sale_id"`
-	Quantity int64  `json:"quantity"`
+// handler holds the application service; it contains no business policy.
+type handler struct{ service *purchase.Service }
+
+func (h handler) create(w http.ResponseWriter, r *http.Request) {
+	in, err := readCreateRequest(w, r)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	result, err := h.service.Create(in.BuyerID, in.SaleID, in.Quantity)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	respond(w, http.StatusCreated, result)
 }
 
-// RegisterRoutes registers resource paths on the supplied API router.
-// The application owns the API version prefix.
-func RegisterRoutes(mux *http.ServeMux, service *purchase.Service) {
-	mux.HandleFunc("POST /purchases", httpjson.Create(func(in createRequest) (any, error) {
-		return service.Create(in.BuyerID, in.SaleID, in.Quantity)
-	}))
-	mux.HandleFunc("GET /purchases/{id}", httpjson.Get(service.Get))
+func (h handler) get(w http.ResponseWriter, r *http.Request) {
+	result, err := h.service.Get(r.PathValue("id"))
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	respond(w, http.StatusOK, result)
 }

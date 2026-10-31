@@ -1,23 +1,33 @@
-// Package httptransport exposes the product module over HTTP.
+// Package httptransport adapts HTTP requests to product use cases.
 package httptransport
 
 import (
-	"net/http"
-
 	"example.com/gogoproject/internal/modules/product"
-	"example.com/gogoproject/internal/platform/httpjson"
+	"net/http"
 )
 
-type createRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+// handler holds the application service; it contains no business policy.
+type handler struct{ service *product.Service }
+
+func (h handler) create(w http.ResponseWriter, r *http.Request) {
+	in, err := readCreateRequest(w, r)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	result, err := h.service.Create(in.Name, in.Description)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	respond(w, http.StatusCreated, result)
 }
 
-// RegisterRoutes registers resource paths on the supplied API router.
-// The application owns the API version prefix.
-func RegisterRoutes(mux *http.ServeMux, service *product.Service) {
-	mux.HandleFunc("POST /products", httpjson.Create(func(in createRequest) (any, error) {
-		return service.Create(in.Name, in.Description)
-	}))
-	mux.HandleFunc("GET /products/{id}", httpjson.Get(service.Get))
+func (h handler) get(w http.ResponseWriter, r *http.Request) {
+	result, err := h.service.Get(r.PathValue("id"))
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	respond(w, http.StatusOK, result)
 }

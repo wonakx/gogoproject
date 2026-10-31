@@ -26,10 +26,24 @@ internal/modules/
 internal/platform/
   fault/                       공통 오류 분류
   identity/                    식별자 생성
-  httpjson/                    공통 JSON 요청·응답 및 오류 처리
 ```
 
-각 모듈의 `transport/http/handler.go`가 리소스 경로와 요청 DTO를 소유합니다. `internal/app/http.go`는 모듈 라우터를 조립하고 `/api/v1` 접두사를 한 번만 적용합니다. `/health`는 버전 없는 운영 경로입니다.
+각 모듈의 HTTP 어댑터는 다음과 같이 역할을 나눕니다. 공통 CRUD 래퍼는 사용하지 않습니다.
+
+| 파일 | 책임 |
+| --- | --- |
+| `transport/http/routes.go` | 경로와 핸들러 연결 |
+| `transport/http/request.go` | 모듈별 요청 DTO, JSON 문법·필드·본문 크기 검사 |
+| `transport/http/handler.go` | 경로 파라미터 추출, 요청을 서비스 입력으로 변환, 서비스 호출 |
+| `transport/http/response.go` | 도메인 오류를 HTTP 상태로 변환하고 JSON 응답 작성 |
+| `service.go` | HTTP와 무관한 입력 검증, 정규화, 업무 흐름 조정 |
+| `memory.go` | 저장·조회, 잠금 안에서 중복·재고 조건 확인과 변경 |
+
+예를 들어 JSON이 깨졌거나 모르는 필드가 들어온 것은 HTTP 어댑터가 거부하고, 이메일 형식이나 수량이 업무 규칙에 맞는지는 서비스가 판단합니다. 구매 서비스가 회원 확인과 재고 예약·주문 저장·실패 보상을 조정합니다. 재고 확인과 차감은 동시 구매에도 원자적으로 수행되도록 저장소에서 처리합니다.
+
+회원 수정은 HTTP DTO를 `member.UpdateInput`으로 변환합니다. 도메인 객체 생성과 정규화는 서비스가 담당하므로 HTTP 없이 서비스를 호출해도 같은 규칙이 적용됩니다.
+
+`internal/app/http.go`는 모듈 라우터를 조립하고 `/api/v1` 접두사를 한 번만 적용합니다. `/health`는 버전 없는 운영 경로입니다.
 
 각 모듈의 `service.go`는 모델, 유스케이스, 소비자 관점의 의존 인터페이스를 정의합니다. `memory.go`는 해당 모듈의 저장소 구현입니다. 외부 의존성이 추가되면 모델과 포트를 별도 파일로 분리할 수 있습니다.
 
@@ -49,6 +63,8 @@ internal/platform/
 | GET | `/health` | 상태 확인 |
 | POST | `/api/v1/members` | 회원 등록 |
 | GET | `/api/v1/members/{id}` | 회원 조회 |
+| PUT | `/api/v1/members/{id}` | 회원 이름·이메일 전체 수정 |
+| DELETE | `/api/v1/members/{id}` | 회원 삭제 (204, 본문 없음) |
 | POST | `/api/v1/products` | 상품 등록 |
 | GET | `/api/v1/products/{id}` | 상품 조회 |
 | POST | `/api/v1/sales` | 판매 등록 |
@@ -97,3 +113,5 @@ curl -sS localhost:8080/api/v1/purchases/PURCHASE_ID
 현재 보상 복구는 프로세스 내부 실행에 한정됩니다. DB를 도입할 때는 구매 저장과 재고 차감의 원자성을 위한 트랜잭션 경계 또는 영속적인 예약·보상 처리가 필요합니다. 다중 서버에서는 DB 수준의 조건부 재고 갱신도 필요합니다.
 
 인증·인가, 결제, 취소, 배송, 목록·검색, 요청 멱등성은 아직 구현하지 않았습니다. 현재 ID는 요청 본문으로 받으므로 운영 서비스에서는 인증한 사용자 ID로 대체해야 합니다. 같은 구매 요청을 재전송하면 별도 주문이 만들어집니다.
+
+회원 수정은 URL의 ID를 기준으로 이름과 이메일을 모두 받습니다. 본문의 ID 필드는 허용하지 않습니다. 회원 삭제는 URL의 ID만 사용하며 JSON 본문은 필요하지 않습니다.
