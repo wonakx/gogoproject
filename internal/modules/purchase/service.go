@@ -1,69 +1,75 @@
 package purchase
 
 import (
-	"errors"
-	"fmt"
-	"time"
+"context"
+"time"
 
-	"example.com/gogoproject/internal/platform/fault"
+"example.com/gogoproject/internal/platform/fault"
 )
 
 const StatusCompleted = "COMPLETED"
 
-type Members interface{ RequireMember(int64) error }
+type Members interface {
+	RequireMember(context.Context, int64) error
+}
 type Sales interface {
-	Reserve(saleNo, buyerNo int64, quantity int32) (sellerNo int64, err error)
-	Release(saleNo int64, quantity int32) error
+	Reserve(ctx context.Context, saleNo, buyerNo int64, quantity int32) (sellerNo int64, err error)
 }
 type Repository interface {
 	// CreateWithHistory persists both records atomically or leaves neither on error.
-	CreateWithHistory(Purchase) (Purchase, error)
-	Get(int64) (Purchase, error)
-	History(int64) ([]History, error)
+	CreateWithHistory(context.Context, Purchase) (Purchase, error)
+	Get(context.Context, int64) (Purchase, error)
+	History(context.Context, int64) ([]History, error)
 }
 type CreateInput struct {
 	SaleNo, BuyMemberNo int64
 	Quantity            int32
 }
+type Transactor interface {
+	Within(context.Context, func(context.Context) error) error
+}
+
 type Service struct {
+	tx      Transactor
 	repo    Repository
 	members Members
 	sales   Sales
 }
 
-func NewService(repo Repository, members Members, sales Sales) *Service {
-	return &Service{repo: repo, members: members, sales: sales}
+func NewService(repo Repository, members Members, sales Sales, tx Transactor) *Service {
+	return &Service{repo: repo, members: members, sales: sales, tx: tx}
 }
-func (s *Service) Create(in CreateInput) (Purchase, error) {
+func (s *Service) Create(ctx context.Context, in CreateInput) (Purchase, error) {
 	if in.SaleNo <= 0 || in.BuyMemberNo <= 0 || in.Quantity <= 0 {
 		return Purchase{}, fault.ErrInvalid
 	}
-	if err := s.members.RequireMember(in.BuyMemberNo); err != nil {
-		return Purchase{}, err
-	}
-	seller, err := s.sales.Reserve(in.SaleNo, in.BuyMemberNo, in.Quantity)
-	if err != nil {
-		return Purchase{}, err
-	}
-	now := time.Now().UTC().Truncate(time.Second)
-	p, err := s.repo.CreateWithHistory(Purchase{SaleNo: in.SaleNo, SellMemberNo: seller, Quantity: in.Quantity, BuyMemberNo: in.BuyMemberNo, PurchaseStatus: StatusCompleted, PurchaseAt: now, CreateAt: now})
-	if err != nil {
-		if releaseErr := s.sales.Release(in.SaleNo, in.Quantity); releaseErr != nil {
-			return Purchase{}, errors.Join(err, fmt.Errorf("stock compensation failed: %w", releaseErr))
+	var result Purchase
+	err := s.tx.Within(ctx, func(ctx context.Context) error {
+		if err := s.members.RequireMember(ctx, in.BuyMemberNo); err != nil {
+			return err
 		}
+		seller, err := s.sales.Reserve(ctx, in.SaleNo, in.BuyMemberNo, in.Quantity)
+		if err != nil {
+			return err
+		}
+		now := time.Now().UTC().Truncate(time.Second)
+		result, err = s.repo.CreateWithHistory(ctx, Purchase{SaleNo: in.SaleNo, SellMemberNo: seller, BuyMemberNo: in.BuyMemberNo, Quantity: in.Quantity, PurchaseStatus: StatusCompleted, PurchaseAt: now, CreateAt: now})
+		return err
+	})
+	if err != nil {
 		return Purchase{}, err
 	}
-	return p, nil
+	return result, nil
 }
-func (s *Service) Get(no int64) (Purchase, error) {
+func (s *Service) Get(ctx context.Context, no int64) (Purchase, error) {
 	if no <= 0 {
 		return Purchase{}, fault.ErrInvalid
 	}
-	return s.repo.Get(no)
+	return s.repo.Get(ctx, no)
 }
-func (s *Service) History(no int64) ([]History, error) {
+func (s *Service) History(ctx context.Context, no int64) ([]History, error) {
 	if no <= 0 {
 		return nil, fault.ErrInvalid
 	}
-	return s.repo.History(no)
+	return s.repo.History(ctx, no)
 }

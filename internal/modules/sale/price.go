@@ -1,12 +1,12 @@
 package sale
 
 import (
-	"encoding/json"
-	"fmt"
-	"strconv"
-	"strings"
+"encoding/json"
+"fmt"
+"strconv"
+"strings"
 
-	"example.com/gogoproject/internal/platform/fault"
+"example.com/gogoproject/internal/platform/fault"
 )
 
 // Price stores DECIMAL(10,2) exactly as hundredths, never as a floating point value.

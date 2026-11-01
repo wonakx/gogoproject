@@ -1,17 +1,20 @@
 package app
 
 import (
-	"encoding/json"
-	"fmt"
-	"net/http/httptest"
-	"strings"
-	"testing"
+"crypto/rand"
+"encoding/json"
+"fmt"
+"net/http/httptest"
+"strings"
+"testing"
 )
 
 func TestSchemaHTTPFlow(t *testing.T) {
-	h := New().Handler()
+	h := integrationApp(t).Handler()
+	token := rand.Text()
 	request := func(method, path, body string, status int) map[string]any {
 		t.Helper()
+		body = strings.NewReplacer(`"seller"`, `"seller-`+token+`"`, `"buyer"`, `"buyer-`+token+`"`, `"renamed"`, `"renamed-`+token+`"`, `P001`, `P001-`+token).Replace(body)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, httptest.NewRequest(method, path, strings.NewReader(body)))
 		if w.Code != status {
@@ -60,14 +63,15 @@ func TestSchemaHTTPFlow(t *testing.T) {
 		t.Fatalf("wrong history: %+v", history)
 	}
 	updated := request("PUT", fmt.Sprintf("/api/v1/members/%.0f", buyer["member_no"]), `{"id":"renamed","email":null,"address":null,"phone_number":"010"} {}`, 200)
-	if updated["id"] != "renamed" || updated["update_at"] == nil {
+	if updated["id"] != "renamed-"+token || updated["update_at"] == nil {
 		t.Fatalf("wrong update: %+v", updated)
 	}
 	request("DELETE", fmt.Sprintf("/api/v1/members/%.0f", buyer["member_no"]), "", 204)
 	request("GET", fmt.Sprintf("/api/v1/members/%.0f", buyer["member_no"]), "", 404)
 }
 func TestHTTPInvalidInputs(t *testing.T) {
-	h := New().Handler()
+	h := integrationApp(t).Handler()
+	token := rand.Text()
 	for _, tc := range []struct {
 		method, path, body string
 		status             int
@@ -77,9 +81,9 @@ func TestHTTPInvalidInputs(t *testing.T) {
 		{"GET", "/api/v1/members/9223372036854775808", "", 400},
 		{"GET", "/api/v1/products/0", "", 400},
 		{"GET", "/api/v1/sales/-1", "", 400},
-		{"GET", "/api/v1/purchases/1", "", 404},
+		{"GET", "/api/v1/purchases/9223372036854775807", "", 404},
 		{"POST", "/api/v1/members", `{"id":""}`, 400},
-		{"POST", "/api/v1/products", `{"product_code":"P"} garbage`, 201},
+		{"POST", "/api/v1/products", `{"product_code":"P-` + token + `"} garbage`, 201},
 		{"POST", "/api/v1/sales", `{"quantity":2147483648}`, 400},
 		{"POST", "/api/v1/sales", `{"price":12.34}`, 400},
 		{"POST", "/api/v1/purchases", `{"quantity":1.5}`, 400},

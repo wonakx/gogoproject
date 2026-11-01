@@ -1,8 +1,8 @@
 package sale
 
 import (
-	"encoding/json"
-	"testing"
+"encoding/json"
+"testing"
 )
 
 func TestPriceExactDecimal(t *testing.T) {

@@ -1,74 +1,53 @@
-// Package httptransport adapts HTTP requests to member use cases.
+// Package httptransport implements the module's generated OpenAPI operations.
 package httptransport
 
 import (
-	"net/http"
+	"context"
 
+	"example.com/gogoproject/internal/api"
 	"example.com/gogoproject/internal/modules/member"
+	"example.com/gogoproject/internal/platform/fault"
 )
 
-type handler struct{ service *member.Service }
+type Handler struct{ service *member.Service }
 
-func (h handler) create(w http.ResponseWriter, r *http.Request) {
-	in, err := readCreateRequest(w, r)
-	if err != nil {
-		fail(w, err)
-		return
+func NewHandler(service *member.Service) *Handler { return &Handler{service: service} }
+
+func (h *Handler) CreateMember(ctx context.Context, request api.CreateMemberRequestObject) (api.CreateMemberResponseObject, error) {
+	if request.Body == nil {
+		return createMemberError(fault.ErrInvalid), nil
 	}
-	result, err := h.service.Register(
-		member.CreateInput{
-			ID: in.ID,
-			Email: in.Email,
-			Address: in.Address,
-			PhoneNumber: in.PhoneNumber,
-		},
-	)
+	in := request.Body
+	result, err := h.service.Register(ctx, member.CreateInput{ID: in.ID, Email: in.Email, Address: in.Address, PhoneNumber: in.PhoneNumber})
 	if err != nil {
-		fail(w, err)
-		return
+		return createMemberError(err), nil
 	}
-	respond(w, http.StatusCreated, result)
+	return api.CreateMember201JSONResponse(toResponse(result)), nil
 }
-func (h handler) get(w http.ResponseWriter, r *http.Request) {
-	no, err := readNumber(r)
+
+func (h *Handler) GetMember(ctx context.Context, request api.GetMemberRequestObject) (api.GetMemberResponseObject, error) {
+	result, err := h.service.Get(ctx, request.MemberNo)
 	if err != nil {
-		fail(w, err)
-		return
+		return getMemberError(err), nil
 	}
-	result, err := h.service.Get(no)
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	respond(w, http.StatusOK, result)
+	return api.GetMember200JSONResponse(toResponse(result)), nil
 }
-func (h handler) update(w http.ResponseWriter, r *http.Request) {
-	no, err := readNumber(r)
-	if err != nil {
-		fail(w, err)
-		return
+
+func (h *Handler) UpdateMember(ctx context.Context, request api.UpdateMemberRequestObject) (api.UpdateMemberResponseObject, error) {
+	if request.Body == nil {
+		return updateMemberError(fault.ErrInvalid), nil
 	}
-	in, err := readUpdateRequest(w, r)
+	in := request.Body
+	result, err := h.service.Update(ctx, member.UpdateInput{MemberNo: request.MemberNo, CreateInput: member.CreateInput{ID: in.ID, Email: in.Email, Address: in.Address, PhoneNumber: in.PhoneNumber}})
 	if err != nil {
-		fail(w, err)
-		return
+		return updateMemberError(err), nil
 	}
-	result, err := h.service.Update(member.UpdateInput{MemberNo: no, CreateInput: member.CreateInput{ID: in.ID, Email: in.Email, Address: in.Address, PhoneNumber: in.PhoneNumber}})
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	respond(w, http.StatusOK, result)
+	return api.UpdateMember200JSONResponse(toResponse(result)), nil
 }
-func (h handler) delete(w http.ResponseWriter, r *http.Request) {
-	no, err := readNumber(r)
-	if err != nil {
-		fail(w, err)
-		return
+
+func (h *Handler) DeleteMember(ctx context.Context, request api.DeleteMemberRequestObject) (api.DeleteMemberResponseObject, error) {
+	if err := h.service.Delete(ctx, request.MemberNo); err != nil {
+		return deleteMemberError(err), nil
 	}
-	if err := h.service.Delete(no); err != nil {
-		fail(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	return api.DeleteMember204Response{}, nil
 }

@@ -1,30 +1,15 @@
 package httptransport
 
 import (
-	"encoding/json"
-	"errors"
-	"log/slog"
-	"net/http"
-
-	"example.com/gogoproject/internal/platform/fault"
+	"example.com/gogoproject/internal/api"
+	"example.com/gogoproject/internal/modules/purchase"
 )
 
-func fail(w http.ResponseWriter, err error) {
-	status, message := http.StatusInternalServerError, "internal server error"
-	switch {
-	case errors.Is(err, fault.ErrInvalid):
-		status, message = http.StatusBadRequest, err.Error()
-	case errors.Is(err, fault.ErrNotFound):
-		status, message = http.StatusNotFound, "not found"
-	case errors.Is(err, fault.ErrConflict):
-		status, message = http.StatusConflict, "sale is unavailable or quantity is insufficient"
-	default:
-		slog.Error("purchase request failed", "error", err)
-	}
-	respond(w, status, map[string]string{"error": message})
+// toResponse is the explicit boundary between the domain model and the public API.
+func toResponse(m purchase.Purchase) api.PurchaseResponse {
+	return api.PurchaseResponse{PurchaseNo: m.PurchaseNo, SaleNo: m.SaleNo, SellMemberNo: m.SellMemberNo, BuyMemberNo: m.BuyMemberNo, Quantity: m.Quantity, PurchaseStatus: api.PurchaseResponsePurchaseStatus(m.PurchaseStatus), PurchaseAt: m.PurchaseAt, CreateAt: m.CreateAt}
 }
-func respond(w http.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+
+func historyResponse(m purchase.History) api.PurchaseHistoryResponse {
+	return api.PurchaseHistoryResponse{PurchaseHistoryNo: m.PurchaseHistoryNo, PurchaseNo: m.PurchaseNo, SaleNo: m.SaleNo, SellMemberNo: m.SellMemberNo, BuyMemberNo: m.BuyMemberNo, Quantity: m.Quantity, PurchaseStatus: api.PurchaseHistoryResponsePurchaseStatus(m.PurchaseStatus), PurchaseAt: m.PurchaseAt, CreateAt: m.CreateAt}
 }

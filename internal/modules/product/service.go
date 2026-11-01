@@ -1,16 +1,17 @@
 package product
 
 import (
-	"strings"
-	"time"
-	"unicode/utf8"
+"context"
+"strings"
+"time"
+"unicode/utf8"
 
-	"example.com/gogoproject/internal/platform/fault"
+"example.com/gogoproject/internal/platform/fault"
 )
 
 type Repository interface {
-	Create(Product) (Product, error)
-	Get(int64) (Product, error)
+	Create(context.Context, Product) (Product, error)
+	Get(context.Context, int64) (Product, error)
 }
 type CreateInput struct {
 	ProductCode       string
@@ -19,15 +20,17 @@ type CreateInput struct {
 type Service struct{ repo Repository }
 
 func NewService(repo Repository) *Service { return &Service{repo: repo} }
-func (s *Service) Create(in CreateInput) (Product, error) {
+
+func (s *Service) Create(ctx context.Context, in CreateInput) (Product, error) {
 	if strings.TrimSpace(in.ProductCode) == "" || utf8.RuneCountInString(in.ProductCode) > 100 || (in.Name != nil && utf8.RuneCountInString(*in.Name) > 200) {
 		return Product{}, fault.ErrInvalid
 	}
-	return s.repo.Create(Product{ProductCode: in.ProductCode, Name: in.Name, Description: in.Description, CreateAt: time.Now().UTC().Truncate(time.Second)})
+	return s.repo.Create(ctx, Product{ProductCode: in.ProductCode, Name: in.Name, Description: in.Description, CreateAt: time.Now().UTC().Truncate(time.Second)})
 }
-func (s *Service) Get(no int64) (Product, error) {
+
+func (s *Service) Get(ctx context.Context, no int64) (Product, error) {
 	if no <= 0 {
 		return Product{}, fault.ErrInvalid
 	}
-	return s.repo.Get(no)
+	return s.repo.Get(ctx, no)
 }

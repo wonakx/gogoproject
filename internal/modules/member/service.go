@@ -2,19 +2,20 @@
 package member
 
 import (
-	"fmt"
-	"strings"
-	"time"
-	"unicode/utf8"
+"context"
+"fmt"
+"strings"
+"time"
+"unicode/utf8"
 
-	"example.com/gogoproject/internal/platform/fault"
+"example.com/gogoproject/internal/platform/fault"
 )
 
 type Repository interface {
-	Create(Member) (Member, error)
-	Update(Member) (Member, error)
-	Get(int64) (Member, error)
-	Delete(int64) error
+	Create(context.Context, Member) (Member, error)
+	Update(context.Context, Member) (Member, error)
+	Get(context.Context, int64) (Member, error)
+	Delete(context.Context, int64) error
 }
 
 type CreateInput struct {
@@ -45,19 +46,19 @@ func validate(in CreateInput) error {
 	}
 	return nil
 }
-func (s *Service) Register(in CreateInput) (Member, error) {
+func (s *Service) Register(ctx context.Context, in CreateInput) (Member, error) {
 	if err := validate(in); err != nil {
 		return Member{}, err
 	}
-	return s.repo.Create(Member{ID: in.ID, Email: in.Email, Address: in.Address, PhoneNumber: in.PhoneNumber, CreateAt: time.Now().UTC().Truncate(time.Second)})
+	return s.repo.Create(ctx, Member{ID: in.ID, Email: in.Email, Address: in.Address, PhoneNumber: in.PhoneNumber, CreateAt: time.Now().UTC().Truncate(time.Second)})
 }
-func (s *Service) Get(no int64) (Member, error) {
+func (s *Service) Get(ctx context.Context, no int64) (Member, error) {
 	if no <= 0 {
 		return Member{}, fault.ErrInvalid
 	}
-	return s.repo.Get(no)
+	return s.repo.Get(ctx, no)
 }
-func (s *Service) Update(in UpdateInput) (Member, error) {
+func (s *Service) Update(ctx context.Context, in UpdateInput) (Member, error) {
 	if in.MemberNo <= 0 {
 		return Member{}, fault.ErrInvalid
 	}
@@ -65,11 +66,11 @@ func (s *Service) Update(in UpdateInput) (Member, error) {
 		return Member{}, err
 	}
 	now := time.Now().UTC().Truncate(time.Second)
-	return s.repo.Update(Member{MemberNo: in.MemberNo, ID: in.ID, Email: in.Email, Address: in.Address, PhoneNumber: in.PhoneNumber, UpdateAt: &now})
+	return s.repo.Update(ctx, Member{MemberNo: in.MemberNo, ID: in.ID, Email: in.Email, Address: in.Address, PhoneNumber: in.PhoneNumber, UpdateAt: &now})
 }
-func (s *Service) Delete(no int64) error {
+func (s *Service) Delete(ctx context.Context, no int64) error {
 	if no <= 0 {
 		return fault.ErrInvalid
 	}
-	return s.repo.Delete(no)
+	return s.repo.Delete(ctx, no)
 }

@@ -11,7 +11,7 @@ CREATE TABLE dealer.dt_member (
     create_at DATETIME NOT NULL,
     update_at DATETIME NULL,
     CONSTRAINT dt_member_id_unique_key UNIQUE (id)
-);
+) ENGINE=InnoDB;
 
 CREATE TABLE dealer.dt_product (
     product_no BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -21,7 +21,7 @@ CREATE TABLE dealer.dt_product (
     create_at DATETIME NOT NULL,
     update_at DATETIME NULL,
     CONSTRAINT dt_product_product_code_key UNIQUE (product_code)
-);
+) ENGINE=InnoDB;
 
 CREATE TABLE dealer.dt_sale (
     sale_no BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -36,7 +36,7 @@ CREATE TABLE dealer.dt_sale (
     end_at DATETIME NULL,
     create_at DATETIME NOT NULL,
     update_at DATETIME NULL
-);
+) ENGINE=InnoDB;
 
 CREATE TABLE dealer.dt_purchase (
     purchase_no BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -47,7 +47,7 @@ CREATE TABLE dealer.dt_purchase (
     purchase_status VARCHAR(30) NOT NULL,
     purchase_at DATETIME NOT NULL,
     create_at DATETIME NOT NULL
-);
+) ENGINE=InnoDB;
 
 CREATE TABLE dealer.dt_purchase_history (
     purchase_history_no BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -59,4 +59,4 @@ CREATE TABLE dealer.dt_purchase_history (
     purchase_status VARCHAR(30) NOT NULL,
     purchase_at DATETIME NOT NULL,
     create_at DATETIME NOT NULL
-);
+) ENGINE=InnoDB;

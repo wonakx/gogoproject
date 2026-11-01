@@ -1,30 +1,11 @@
 package httptransport
 
 import (
-	"encoding/json"
-	"errors"
-	"log/slog"
-	"net/http"
-
-	"example.com/gogoproject/internal/platform/fault"
+	"example.com/gogoproject/internal/api"
+	"example.com/gogoproject/internal/modules/sale"
 )
 
-func fail(w http.ResponseWriter, err error) {
-	status, message := http.StatusInternalServerError, "internal server error"
-	switch {
-	case errors.Is(err, fault.ErrInvalid):
-		status, message = http.StatusBadRequest, err.Error()
-	case errors.Is(err, fault.ErrNotFound):
-		status, message = http.StatusNotFound, "not found"
-	case errors.Is(err, fault.ErrConflict):
-		status, message = http.StatusConflict, "sale is unavailable or quantity is insufficient"
-	default:
-		slog.Error("sale request failed", "error", err)
-	}
-	respond(w, status, map[string]string{"error": message})
-}
-func respond(w http.ResponseWriter, status int, value any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+// toResponse is the explicit boundary between the domain model and the public API.
+func toResponse(m sale.Sale) api.SaleResponse {
+	return api.SaleResponse{SaleNo: m.SaleNo, SellMemberNo: m.SellMemberNo, ProductNo: m.ProductNo, Name: m.Name, Description: m.Description, Quantity: m.Quantity, Price: m.Price.String(), Status: api.SaleStatus(m.Status), StartAt: m.StartAt, EndAt: m.EndAt, CreateAt: m.CreateAt, UpdateAt: m.UpdateAt}
 }

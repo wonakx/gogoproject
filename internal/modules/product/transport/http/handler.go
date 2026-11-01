@@ -1,37 +1,34 @@
-// Package httptransport adapts HTTP requests to product use cases.
+// Package httptransport implements the module's generated OpenAPI operations.
 package httptransport
 
 import (
-	"net/http"
+	"context"
 
+	"example.com/gogoproject/internal/api"
 	"example.com/gogoproject/internal/modules/product"
+	"example.com/gogoproject/internal/platform/fault"
 )
 
-type handler struct{ service *product.Service }
+type Handler struct{ service *product.Service }
 
-func (h handler) create(w http.ResponseWriter, r *http.Request) {
-	in, err := readCreateRequest(w, r)
-	if err != nil {
-		fail(w, err)
-		return
+func NewHandler(service *product.Service) *Handler { return &Handler{service: service} }
+
+func (h *Handler) CreateProduct(ctx context.Context, request api.CreateProductRequestObject) (api.CreateProductResponseObject, error) {
+	if request.Body == nil {
+		return createProductError(fault.ErrInvalid), nil
 	}
-	result, err := h.service.Create(product.CreateInput{ProductCode: in.ProductCode, Name: in.Name, Description: in.Description})
+	in := request.Body
+	result, err := h.service.Create(ctx, product.CreateInput{ProductCode: in.ProductCode, Name: in.Name, Description: in.Description})
 	if err != nil {
-		fail(w, err)
-		return
+		return createProductError(err), nil
 	}
-	respond(w, http.StatusCreated, result)
+	return api.CreateProduct201JSONResponse(toResponse(result)), nil
 }
-func (h handler) get(w http.ResponseWriter, r *http.Request) {
-	no, err := readNumber(r)
+
+func (h *Handler) GetProduct(ctx context.Context, request api.GetProductRequestObject) (api.GetProductResponseObject, error) {
+	result, err := h.service.Get(ctx, request.ProductNo)
 	if err != nil {
-		fail(w, err)
-		return
+		return getProductError(err), nil
 	}
-	result, err := h.service.Get(no)
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	respond(w, http.StatusOK, result)
+	return api.GetProduct200JSONResponse(toResponse(result)), nil
 }

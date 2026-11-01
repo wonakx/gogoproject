@@ -1,50 +1,46 @@
-// Package httptransport adapts HTTP requests to purchase use cases.
+// Package httptransport implements the module's generated OpenAPI operations.
 package httptransport
 
 import (
-	"net/http"
+	"context"
 
+	"example.com/gogoproject/internal/api"
 	"example.com/gogoproject/internal/modules/purchase"
+	"example.com/gogoproject/internal/platform/fault"
 )
 
-type handler struct{ service *purchase.Service }
+type Handler struct{ service *purchase.Service }
 
-func (h handler) create(w http.ResponseWriter, r *http.Request) {
-	in, err := readCreateRequest(w, r)
-	if err != nil {
-		fail(w, err)
-		return
+func NewHandler(service *purchase.Service) *Handler { return &Handler{service: service} }
+
+func (h *Handler) CreatePurchase(ctx context.Context, request api.CreatePurchaseRequestObject) (api.CreatePurchaseResponseObject, error) {
+	if request.Body == nil {
+		return createPurchaseError(fault.ErrInvalid), nil
 	}
-	result, err := h.service.Create(purchase.CreateInput{SaleNo: in.SaleNo, BuyMemberNo: in.BuyMemberNo, Quantity: in.Quantity})
+	in := request.Body
+	result, err := h.service.Create(ctx, purchase.CreateInput{SaleNo: in.SaleNo, BuyMemberNo: in.BuyMemberNo, Quantity: in.Quantity})
 	if err != nil {
-		fail(w, err)
-		return
+		return createPurchaseError(err), nil
 	}
-	respond(w, http.StatusCreated, result)
+	return api.CreatePurchase201JSONResponse(toResponse(result)), nil
 }
-func (h handler) get(w http.ResponseWriter, r *http.Request) {
-	no, err := readNumber(r)
+
+func (h *Handler) GetPurchase(ctx context.Context, request api.GetPurchaseRequestObject) (api.GetPurchaseResponseObject, error) {
+	result, err := h.service.Get(ctx, request.PurchaseNo)
 	if err != nil {
-		fail(w, err)
-		return
+		return getPurchaseError(err), nil
 	}
-	result, err := h.service.Get(no)
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	respond(w, http.StatusOK, result)
+	return api.GetPurchase200JSONResponse(toResponse(result)), nil
 }
-func (h handler) history(w http.ResponseWriter, r *http.Request) {
-	no, err := readNumber(r)
+
+func (h *Handler) ListPurchaseHistories(ctx context.Context, request api.ListPurchaseHistoriesRequestObject) (api.ListPurchaseHistoriesResponseObject, error) {
+	result, err := h.service.History(ctx, request.PurchaseNo)
 	if err != nil {
-		fail(w, err)
-		return
+		return listPurchaseHistoriesError(err), nil
 	}
-	result, err := h.service.History(no)
-	if err != nil {
-		fail(w, err)
-		return
+	out := make(api.ListPurchaseHistories200JSONResponse, len(result))
+	for i, item := range result {
+		out[i] = historyResponse(item)
 	}
-	respond(w, http.StatusOK, result)
+	return out, nil
 }

@@ -11,16 +11,30 @@ import (
 	"time"
 
 	"example.com/gogoproject/internal/app"
+	"example.com/gogoproject/internal/platform/mysqlstore"
 )
 
 func main() {
+	if err := run(); err != nil {
+		slog.Error("server failed", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	db, err := mysqlstore.Open(ctx, os.Getenv("DB_DSN"))
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
 	addr := os.Getenv("HTTP_ADDR")
 	if addr == "" {
 		addr = ":8080"
 	}
-	server := &http.Server{Addr: addr, Handler: app.New().Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	server := &http.Server{Addr: addr, Handler: app.New(db).Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -34,8 +48,8 @@ func main() {
 	}()
 	slog.Info("server starting", "address", addr)
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		slog.Error("server failed", "error", err)
-		os.Exit(1)
+		return err
 	}
 	<-done
+	return nil
 }

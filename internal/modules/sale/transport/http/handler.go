@@ -1,37 +1,38 @@
-// Package httptransport adapts HTTP requests to sale use cases.
+// Package httptransport implements the module's generated OpenAPI operations.
 package httptransport
 
 import (
-	"net/http"
+	"context"
 
+	"example.com/gogoproject/internal/api"
 	"example.com/gogoproject/internal/modules/sale"
+	"example.com/gogoproject/internal/platform/fault"
 )
 
-type handler struct{ service *sale.Service }
+type Handler struct{ service *sale.Service }
 
-func (h handler) create(w http.ResponseWriter, r *http.Request) {
-	in, err := readCreateRequest(w, r)
-	if err != nil {
-		fail(w, err)
-		return
+func NewHandler(service *sale.Service) *Handler { return &Handler{service: service} }
+
+func (h *Handler) CreateSale(ctx context.Context, request api.CreateSaleRequestObject) (api.CreateSaleResponseObject, error) {
+	if request.Body == nil {
+		return createSaleError(fault.ErrInvalid), nil
 	}
-	result, err := h.service.Create(sale.CreateInput{SellMemberNo: in.SellMemberNo, ProductNo: in.ProductNo, Name: in.Name, Description: in.Description, Quantity: in.Quantity, Price: in.Price, Status: in.Status, StartAt: in.StartAt, EndAt: in.EndAt})
+	in := request.Body
+	price, err := sale.ParsePrice(in.Price)
 	if err != nil {
-		fail(w, err)
-		return
+		return createSaleError(err), nil
 	}
-	respond(w, http.StatusCreated, result)
+	result, err := h.service.Create(ctx, sale.CreateInput{SellMemberNo: in.SellMemberNo, ProductNo: in.ProductNo, Name: in.Name, Description: in.Description, Quantity: in.Quantity, Price: price, Status: string(in.Status), StartAt: in.StartAt, EndAt: in.EndAt})
+	if err != nil {
+		return createSaleError(err), nil
+	}
+	return api.CreateSale201JSONResponse(toResponse(result)), nil
 }
-func (h handler) get(w http.ResponseWriter, r *http.Request) {
-	no, err := readNumber(r)
+
+func (h *Handler) GetSale(ctx context.Context, request api.GetSaleRequestObject) (api.GetSaleResponseObject, error) {
+	result, err := h.service.Get(ctx, request.SaleNo)
 	if err != nil {
-		fail(w, err)
-		return
+		return getSaleError(err), nil
 	}
-	result, err := h.service.Get(no)
-	if err != nil {
-		fail(w, err)
-		return
-	}
-	respond(w, http.StatusOK, result)
+	return api.GetSale200JSONResponse(toResponse(result)), nil
 }

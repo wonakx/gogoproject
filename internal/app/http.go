@@ -1,29 +1,40 @@
 package app
 
 import (
-	"encoding/json"
+	"context"
 	"net/http"
 
+	"example.com/gogoproject/internal/api"
 	memberhttp "example.com/gogoproject/internal/modules/member/transport/http"
 	producthttp "example.com/gogoproject/internal/modules/product/transport/http"
 	purchasehttp "example.com/gogoproject/internal/modules/purchase/transport/http"
 	salehttp "example.com/gogoproject/internal/modules/sale/transport/http"
+	"example.com/gogoproject/internal/platform/httpapi"
 )
 
-const apiPrefix = "/api/v1"
+// Embedding composes module operations without coupling the modules to each other.
+type strictServer struct {
+	*memberhttp.Handler
+	// Named embedded aliases avoid the four Handler types having identical field names.
+	*productOperations
+	*saleOperations
+	*purchaseOperations
+}
+type productOperations = producthttp.Handler
+type saleOperations = salehttp.Handler
+type purchaseOperations = purchasehttp.Handler
 
+var _ api.StrictServerInterface = (*strictServer)(nil)
+
+func (s *strictServer) Health(ctx context.Context, request api.HealthRequestObject) (api.HealthResponseObject, error) {
+	return api.Health200JSONResponse{Status: api.Ok}, nil
+}
 func (a *App) Handler() http.Handler {
-	api := http.NewServeMux()
-	memberhttp.RegisterRoutes(api, a.Members)
-	producthttp.RegisterRoutes(api, a.Products)
-	salehttp.RegisterRoutes(api, a.Sales)
-	purchasehttp.RegisterRoutes(api, a.Purchases)
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-	})
-	mux.Handle(apiPrefix+"/", http.StripPrefix(apiPrefix, api))
-	return mux
+	server := &strictServer{
+		Handler:            memberhttp.NewHandler(a.Members),
+		productOperations:  producthttp.NewHandler(a.Products),
+		saleOperations:     salehttp.NewHandler(a.Sales),
+		purchaseOperations: purchasehttp.NewHandler(a.Purchases),
+	}
+	return httpapi.NewHandler(server)
 }
