@@ -8,58 +8,59 @@ import (
 
 type MemoryRepository struct {
 	mu      sync.RWMutex
-	members map[string]Member
-	emails  map[string]string
+	next    int64
+	members map[int64]Member
+	ids     map[string]int64
 }
 
 func NewMemoryRepository() *MemoryRepository {
-	return &MemoryRepository{members: make(map[string]Member), emails: make(map[string]string)}
+	return &MemoryRepository{members: make(map[int64]Member), ids: make(map[string]int64)}
 }
-func (r *MemoryRepository) Create(m Member) error {
+func (r *MemoryRepository) Create(m Member) (Member, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, ok := r.emails[m.Email]; ok {
-		return fault.ErrConflict
+	if _, ok := r.ids[m.ID]; ok {
+		return Member{}, fault.ErrConflict
 	}
-	r.members[m.ID] = m
-	r.emails[m.Email] = m.ID
-	return nil
+	r.next++
+	m.MemberNo = r.next
+	r.members[m.MemberNo] = clone(m)
+	r.ids[m.ID] = m.MemberNo
+	return clone(m), nil
 }
-
-func (r *MemoryRepository) Get(id string) (Member, error) {
+func (r *MemoryRepository) Get(no int64) (Member, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	m, ok := r.members[id]
+	m, ok := r.members[no]
 	if !ok {
 		return Member{}, fault.ErrNotFound
 	}
-	return m, nil
+	return clone(m), nil
 }
-
 func (r *MemoryRepository) Update(m Member) (Member, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	previous, ok := r.members[m.ID]
+	old, ok := r.members[m.MemberNo]
 	if !ok {
 		return Member{}, fault.ErrNotFound
 	}
-	if owner, exists := r.emails[m.Email]; exists && owner != m.ID {
+	if owner, exists := r.ids[m.ID]; exists && owner != m.MemberNo {
 		return Member{}, fault.ErrConflict
 	}
-	delete(r.emails, previous.Email)
-	r.members[m.ID] = m
-	r.emails[m.Email] = m.ID
-	return m, nil
+	delete(r.ids, old.ID)
+	m.CreateAt = old.CreateAt
+	r.members[m.MemberNo] = clone(m)
+	r.ids[m.ID] = m.MemberNo
+	return clone(m), nil
 }
-
-func (r *MemoryRepository) Delete(id string) error {
+func (r *MemoryRepository) Delete(no int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	m, ok := r.members[id]
+	m, ok := r.members[no]
 	if !ok {
 		return fault.ErrNotFound
 	}
-	delete(r.members, id)
-	delete(r.emails, m.Email)
+	delete(r.members, no)
+	delete(r.ids, m.ID)
 	return nil
 }

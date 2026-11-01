@@ -1,30 +1,39 @@
 package product
 
 import (
-	"example.com/gogoproject/internal/platform/fault"
 	"sync"
+
+	"example.com/gogoproject/internal/platform/fault"
 )
 
 type MemoryRepository struct {
 	mu       sync.RWMutex
-	products map[string]Product
+	next     int64
+	products map[int64]Product
+	codes    map[string]int64
 }
 
 func NewMemoryRepository() *MemoryRepository {
-	return &MemoryRepository{products: make(map[string]Product)}
+	return &MemoryRepository{products: make(map[int64]Product), codes: make(map[string]int64)}
 }
-func (r *MemoryRepository) Create(p Product) error {
+func (r *MemoryRepository) Create(p Product) (Product, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.products[p.ID] = p
-	return nil
+	if _, ok := r.codes[p.ProductCode]; ok {
+		return Product{}, fault.ErrConflict
+	}
+	r.next++
+	p.ProductNo = r.next
+	r.products[p.ProductNo] = clone(p)
+	r.codes[p.ProductCode] = p.ProductNo
+	return clone(p), nil
 }
-func (r *MemoryRepository) Get(id string) (Product, error) {
+func (r *MemoryRepository) Get(no int64) (Product, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	p, ok := r.products[id]
+	p, ok := r.products[no]
 	if !ok {
 		return Product{}, fault.ErrNotFound
 	}
-	return p, nil
+	return clone(p), nil
 }

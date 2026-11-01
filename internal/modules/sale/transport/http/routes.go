@@ -1,13 +1,13 @@
 package httptransport
 
 import (
-	"example.com/gogoproject/internal/modules/sale"
 	"net/http"
+
+	"example.com/gogoproject/internal/modules/sale"
 )
 
-// RegisterRoutes only connects HTTP routes to module handlers.
 func RegisterRoutes(mux *http.ServeMux, service *sale.Service) {
 	h := handler{service: service}
 	mux.HandleFunc("POST /sales", h.create)
-	mux.HandleFunc("GET /sales/{id}", h.get)
+	mux.HandleFunc("GET /sales/{sale_no}", h.get)
 }

@@ -3,9 +3,10 @@ package httptransport
 import (
 	"encoding/json"
 	"errors"
-	"example.com/gogoproject/internal/platform/fault"
 	"log/slog"
 	"net/http"
+
+	"example.com/gogoproject/internal/platform/fault"
 )
 
 func fail(w http.ResponseWriter, err error) {
@@ -16,7 +17,7 @@ func fail(w http.ResponseWriter, err error) {
 	case errors.Is(err, fault.ErrNotFound):
 		status, message = http.StatusNotFound, "not found"
 	case errors.Is(err, fault.ErrConflict):
-		status, message = http.StatusConflict, "insufficient stock"
+		status, message = http.StatusConflict, "sale is unavailable or quantity is insufficient"
 	default:
 		slog.Error("sale request failed", "error", err)
 	}

@@ -2,92 +2,96 @@ package app
 
 import (
 	"encoding/json"
-	"errors"
+	"fmt"
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"example.com/gogoproject/internal/modules/member"
-	"example.com/gogoproject/internal/platform/fault"
 )
 
-func TestMemberHTTPUpdateAndDelete(t *testing.T) {
-	a, seller, buyer, _ := fixture(t, 3)
-	h := a.Handler()
-	request := func(method, id, body string, status int) *httptest.ResponseRecorder {
+func TestSchemaHTTPFlow(t *testing.T) {
+	h := New().Handler()
+	request := func(method, path, body string, status int) map[string]any {
 		t.Helper()
 		w := httptest.NewRecorder()
-		h.ServeHTTP(w, httptest.NewRequest(method, "/api/v1/members/"+id, strings.NewReader(body)))
+		h.ServeHTTP(w, httptest.NewRequest(method, path, strings.NewReader(body)))
 		if w.Code != status {
-			t.Fatalf("%s: got %d, want %d: %s", method, w.Code, status, w.Body.String())
+			t.Fatalf("%s %s: got %d want %d: %s", method, path, w.Code, status, w.Body.String())
 		}
-		return w
+		if status == 204 {
+			if w.Body.Len() != 0 {
+				t.Fatal("204 has body")
+			}
+			return nil
+		}
+		var out map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
 	}
-	request("PUT", buyer, `{"name":"Changed","email":"seller@example.com"}`, 409)
-	for _, body := range []string{
-		`{"id":"` + seller + `","name":"Changed","email":"new@example.com"}`,
-		`{"name":"Changed","email":"bad"}`,
-		`{"name":"Changed"}`,
-		`null`,
-	} {
-		request("PUT", buyer, body, 400)
+	seller := request("POST", "/api/v1/members", `{"id":"seller","email":null,"address":"Seoul","phone_number":null}`, 201)
+	buyer := request("POST", "/api/v1/members", `{"id":"buyer"} ignored`, 201)
+	if seller["email"] != nil || seller["update_at"] != nil {
+		t.Fatal("nullable fields not null")
 	}
-	unchanged, err := a.Members.Get(buyer)
-	if err != nil || unchanged.Name != "Buyer" || unchanged.Email != "buyer@example.com" {
-		t.Fatalf("invalid request changed member: %+v %v", unchanged, err)
+	request("POST", "/api/v1/members", `{"id":"seller"}`, 409)
+	product := request("POST", "/api/v1/products", `{"product_code":"P001","name":null,"description":null}`, 201)
+	request("POST", "/api/v1/products", `{"product_code":"P001"}`, 409)
+	sale := request("POST", "/api/v1/sales", fmt.Sprintf(`{"sell_member_no":%.0f,"product_no":%.0f,"quantity":5,"price":"123.45","status":"ACTIVE","start_at":"2020-01-01T00:00:00Z"}`, seller["member_no"], product["product_no"]), 201)
+	if sale["price"] != "123.45" {
+		t.Fatalf("wrong price: %v", sale["price"])
 	}
-	w := request("PUT", buyer, `{"name":" Changed ","email":" NEW@example.com "} garbage`, 200)
-	var updated member.Member
-	if err := json.Unmarshal(w.Body.Bytes(), &updated); err != nil {
-		t.Fatal(err)
+	purchase := request("POST", "/api/v1/purchases", fmt.Sprintf(`{"sale_no":%.0f,"buy_member_no":%.0f,"quantity":2}`, sale["sale_no"], buyer["member_no"]), 201)
+	if purchase["sell_member_no"] != seller["member_no"] || purchase["quantity"] != float64(2) {
+		t.Fatalf("wrong purchase: %+v", purchase)
 	}
-	if updated.ID != buyer || updated.Name != "Changed" || updated.Email != "new@example.com" {
-		t.Fatalf("unexpected updated member: %+v", updated)
+	got := request("GET", fmt.Sprintf("/api/v1/sales/%.0f", sale["sale_no"]), "", 200)
+	if got["quantity"] != float64(3) {
+		t.Fatalf("wrong stock: %+v", got)
 	}
-	if _, err := a.Members.Register("Reuse old email", "buyer@example.com"); err != nil {
-		t.Fatal(err)
+	request("GET", fmt.Sprintf("/api/v1/purchases/%.0f", purchase["purchase_no"]), "", 200)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", fmt.Sprintf("/api/v1/purchases/%.0f/histories", purchase["purchase_no"]), nil))
+	var history []map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &history); err != nil || w.Code != 200 || len(history) != 1 {
+		t.Fatalf("history: %s %v", w.Body.String(), err)
 	}
-	request("PUT", "missing", `{"name":"Changed","email":"another@example.com"}`, 404)
-	w = request("DELETE", buyer, "", 204)
-	if w.Body.Len() != 0 {
-		t.Fatalf("204 must have no body: %s", w.Body.String())
+	if history[0]["quantity"] != float64(2) || history[0]["purchase_no"] != purchase["purchase_no"] {
+		t.Fatalf("wrong history: %+v", history)
 	}
-	if _, err := a.Members.Get(buyer); !errors.Is(err, fault.ErrNotFound) {
-		t.Fatalf("deleted member still exists: %v", err)
+	updated := request("PUT", fmt.Sprintf("/api/v1/members/%.0f", buyer["member_no"]), `{"id":"renamed","email":null,"address":null,"phone_number":"010"} {}`, 200)
+	if updated["id"] != "renamed" || updated["update_at"] == nil {
+		t.Fatalf("wrong update: %+v", updated)
 	}
-	request("DELETE", buyer, "", 404)
-	if _, err := a.Members.Register("Reuse deleted email", "new@example.com"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := a.Members.Get(seller); err != nil {
-		t.Fatalf("unrelated member changed: %v", err)
-	}
+	request("DELETE", fmt.Sprintf("/api/v1/members/%.0f", buyer["member_no"]), "", 204)
+	request("GET", fmt.Sprintf("/api/v1/members/%.0f", buyer["member_no"]), "", 404)
 }
-
-func TestModuleHTTPInputHandling(t *testing.T) {
-	a, seller, buyer, saleID := fixture(t, 3)
-	h := a.Handler()
-	sale, err := a.Sales.Get(saleID)
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestHTTPInvalidInputs(t *testing.T) {
+	h := New().Handler()
 	for _, tc := range []struct {
-		path, body string
-		status     int
+		method, path, body string
+		status             int
 	}{
-		{"products", `{"name":"Mouse","description":"Wireless"}`, 201},
-		{"products", `{"name":" "}`, 400},
-		{"sales", `{"seller_id":"` + seller + `","product_id":"` + sale.ProductID + `","unit_price":100,"stock":2}`, 201},
-		{"sales", `{"seller_id":"` + seller + `","product_id":"` + sale.ProductID + `","unit_price":0,"stock":2}`, 400},
-		{"sales", `{"unknown":true}`, 400},
-		{"purchases", `{"buyer_id":"` + buyer + `","sale_id":"` + saleID + `","quantity":2}`, 201},
-		{"purchases", `{"buyer_id":"` + buyer + `","sale_id":"` + saleID + `","quantity":2}`, 409},
-		{"purchases", `{"buyer_id":"` + buyer + `","sale_id":"` + saleID + `","quantity":0}`, 400},
+		{"GET", "/health", "", 200},
+		{"GET", "/api/v1/members/not-a-number", "", 400},
+		{"GET", "/api/v1/members/9223372036854775808", "", 400},
+		{"GET", "/api/v1/products/0", "", 400},
+		{"GET", "/api/v1/sales/-1", "", 400},
+		{"GET", "/api/v1/purchases/1", "", 404},
+		{"POST", "/api/v1/members", `{"id":""}`, 400},
+		{"POST", "/api/v1/products", `{"product_code":"P"} garbage`, 201},
+		{"POST", "/api/v1/sales", `{"quantity":2147483648}`, 400},
+		{"POST", "/api/v1/sales", `{"price":12.34}`, 400},
+		{"POST", "/api/v1/purchases", `{"quantity":1.5}`, 400},
+		{"POST", "/api/v1/purchases", `null`, 400},
+		{"GET", "/members/1", "", 404},
+		{"GET", "/api/v2/members/1", "", 404},
+		{"PATCH", "/api/v1/members/1", "", 405},
 	} {
 		w := httptest.NewRecorder()
-		h.ServeHTTP(w, httptest.NewRequest("POST", "/api/v1/"+tc.path, strings.NewReader(tc.body)))
+		h.ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body)))
 		if w.Code != tc.status {
-			t.Errorf("%s: got %d, want %d: %s", tc.path, w.Code, tc.status, w.Body.String())
+			t.Errorf("%s %s: got %d want %d: %s", tc.method, tc.path, w.Code, tc.status, w.Body.String())
 		}
 	}
 }

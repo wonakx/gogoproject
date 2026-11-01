@@ -1,31 +1,34 @@
-// Package sale owns listings, prices and available stock.
 package sale
 
 import (
+	"time"
+	"unicode/utf8"
+
 	"example.com/gogoproject/internal/platform/fault"
-	"example.com/gogoproject/internal/platform/identity"
-	"fmt"
 )
 
-type Sale struct {
-	ID        string `json:"id"`
-	SellerID  string `json:"seller_id"`
-	ProductID string `json:"product_id"`
-	UnitPrice int64  `json:"unit_price"`
-	Stock     int64  `json:"stock"`
-}
+const StatusActive = "ACTIVE"
+const StatusClosed = "CLOSED"
 
-// Directory is a consumer-owned port. The composition root supplies its adapter.
 type Directory interface {
-	RequireMember(string) error
-	RequireProduct(string) error
+	RequireProduct(int64) error
+	RequireMember(int64) error
 }
 type Repository interface {
-	Create(Sale) error
-	Get(string) (Sale, error)
-	// Reserve must atomically validate buyer/quantity and decrement stock.
-	Reserve(id, buyerID string, quantity int64) (Sale, error)
-	Release(id string, quantity int64) error
+	Create(Sale) (Sale, error)
+	Get(int64) (Sale, error)
+	// Reserve checks buyer and availability and decrements quantity atomically.
+	Reserve(saleNo, buyerNo int64, quantity int32, now time.Time) (sellerNo int64, err error)
+	Release(saleNo int64, quantity int32) error
+}
+type CreateInput struct {
+	Name, Description       *string
+	ProductNo, SellMemberNo int64
+	Quantity                int32
+	Price                   Price
+	Status                  string
+	StartAt                 time.Time
+	EndAt                   *time.Time
 }
 type Service struct {
 	repo      Repository
@@ -35,32 +38,28 @@ type Service struct {
 func NewService(repo Repository, directory Directory) *Service {
 	return &Service{repo: repo, directory: directory}
 }
-func (s *Service) Create(sellerID, productID string, price, stock int64) (Sale, error) {
-	if sellerID == "" || productID == "" || price <= 0 || stock <= 0 {
-		return Sale{}, fmt.Errorf("%w: seller, product, positive price and stock required", fault.ErrInvalid)
-	}
-	if err := s.directory.RequireMember(sellerID); err != nil {
-		return Sale{}, err
-	}
-	if err := s.directory.RequireProduct(productID); err != nil {
-		return Sale{}, err
-	}
-	sale := Sale{ID: identity.New(), SellerID: sellerID, ProductID: productID, UnitPrice: price, Stock: stock}
-	if err := s.repo.Create(sale); err != nil {
-		return Sale{}, err
-	}
-	return sale, nil
-}
-func (s *Service) Get(id string) (Sale, error) { return s.repo.Get(id) }
-func (s *Service) Reserve(id, buyerID string, quantity int64) (Sale, error) {
-	if quantity <= 0 {
+func (s *Service) Create(in CreateInput) (Sale, error) {
+	if in.SellMemberNo <= 0 || in.ProductNo <= 0 || in.Quantity <= 0 || in.Price <= 0 || in.Price > MaxPrice || (in.Status != StatusActive && in.Status != StatusClosed) || in.StartAt.IsZero() || (in.Name != nil && utf8.RuneCountInString(*in.Name) > 200) || (in.EndAt != nil && !in.EndAt.After(in.StartAt)) {
 		return Sale{}, fault.ErrInvalid
 	}
-	return s.repo.Reserve(id, buyerID, quantity)
-}
-func (s *Service) Release(id string, quantity int64) error {
-	if quantity <= 0 {
-		return fault.ErrInvalid
+	if err := s.directory.RequireProduct(in.ProductNo); err != nil {
+		return Sale{}, err
 	}
-	return s.repo.Release(id, quantity)
+	if err := s.directory.RequireMember(in.SellMemberNo); err != nil {
+		return Sale{}, err
+	}
+	return s.repo.Create(Sale{SellMemberNo: in.SellMemberNo, Name: in.Name, Description: in.Description, ProductNo: in.ProductNo, Quantity: in.Quantity, Price: in.Price, Status: in.Status, StartAt: in.StartAt, EndAt: in.EndAt, CreateAt: time.Now().UTC().Truncate(time.Second)})
 }
+func (s *Service) Get(no int64) (Sale, error) {
+	if no <= 0 {
+		return Sale{}, fault.ErrInvalid
+	}
+	return s.repo.Get(no)
+}
+func (s *Service) Reserve(no, buyer int64, quantity int32) (int64, error) {
+	if no <= 0 || buyer <= 0 || quantity <= 0 {
+		return 0, fault.ErrInvalid
+	}
+	return s.repo.Reserve(no, buyer, quantity, time.Now().UTC())
+}
+func (s *Service) Release(no int64, quantity int32) error { return s.repo.Release(no, quantity) }

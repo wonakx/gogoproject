@@ -2,16 +2,18 @@ package httptransport
 
 import (
 	"encoding/json"
-	"example.com/gogoproject/internal/platform/fault"
 	"net/http"
+	"strconv"
+
+	"example.com/gogoproject/internal/platform/fault"
 )
 
 type createRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	ProductCode string  `json:"product_code"`
+	Name        *string `json:"name"`
+	Description *string `json:"description"`
 }
 
-// readCreateRequest checks HTTP syntax only; the service validates business values.
 func readCreateRequest(w http.ResponseWriter, r *http.Request) (createRequest, error) {
 	var in createRequest
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
@@ -21,4 +23,11 @@ func readCreateRequest(w http.ResponseWriter, r *http.Request) (createRequest, e
 		return in, fault.ErrInvalid
 	}
 	return in, nil
+}
+func readNumber(r *http.Request) (int64, error) {
+	no, err := strconv.ParseInt(r.PathValue("product_no"), 10, 64)
+	if err != nil || no <= 0 {
+		return 0, fault.ErrInvalid
+	}
+	return no, nil
 }

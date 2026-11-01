@@ -29,16 +29,12 @@ type directoryAdapter struct {
 	products *product.Service
 }
 
-func (a directoryAdapter) RequireMember(id string) error  { _, err := a.members.Get(id); return err }
-func (a directoryAdapter) RequireProduct(id string) error { _, err := a.products.Get(id); return err }
+func (a directoryAdapter) RequireMember(no int64) error  { _, err := a.members.Get(no); return err }
+func (a directoryAdapter) RequireProduct(no int64) error { _, err := a.products.Get(no); return err }
 
 type salesAdapter struct{ sales *sale.Service }
 
-func (a salesAdapter) Reserve(id, buyerID string, quantity int64) (purchase.Reservation, error) {
-	s, err := a.sales.Reserve(id, buyerID, quantity)
-	if err != nil {
-		return purchase.Reservation{}, err
-	}
-	return purchase.Reservation{ProductID: s.ProductID, SellerID: s.SellerID, UnitPrice: s.UnitPrice}, nil
+func (a salesAdapter) Reserve(no, buyer int64, quantity int32) (int64, error) {
+	return a.sales.Reserve(no, buyer, quantity)
 }
-func (a salesAdapter) Release(id string, quantity int64) error { return a.sales.Release(id, quantity) }
+func (a salesAdapter) Release(no int64, quantity int32) error { return a.sales.Release(no, quantity) }

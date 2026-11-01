@@ -17,7 +17,7 @@ func fail(w http.ResponseWriter, err error) {
 	case errors.Is(err, fault.ErrNotFound):
 		status, message = http.StatusNotFound, "not found"
 	case errors.Is(err, fault.ErrConflict):
-		status, message = http.StatusConflict, "duplicate email"
+		status, message = http.StatusConflict, "duplicate member id"
 	default:
 		slog.Error("member request failed", "error", err)
 	}

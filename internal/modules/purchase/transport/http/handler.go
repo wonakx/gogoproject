@@ -2,11 +2,11 @@
 package httptransport
 
 import (
-	"example.com/gogoproject/internal/modules/purchase"
 	"net/http"
+
+	"example.com/gogoproject/internal/modules/purchase"
 )
 
-// handler holds the application service; it contains no business policy.
 type handler struct{ service *purchase.Service }
 
 func (h handler) create(w http.ResponseWriter, r *http.Request) {
@@ -15,16 +15,33 @@ func (h handler) create(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	result, err := h.service.Create(in.BuyerID, in.SaleID, in.Quantity)
+	result, err := h.service.Create(purchase.CreateInput{SaleNo: in.SaleNo, BuyMemberNo: in.BuyMemberNo, Quantity: in.Quantity})
 	if err != nil {
 		fail(w, err)
 		return
 	}
 	respond(w, http.StatusCreated, result)
 }
-
 func (h handler) get(w http.ResponseWriter, r *http.Request) {
-	result, err := h.service.Get(r.PathValue("id"))
+	no, err := readNumber(r)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	result, err := h.service.Get(no)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	respond(w, http.StatusOK, result)
+}
+func (h handler) history(w http.ResponseWriter, r *http.Request) {
+	no, err := readNumber(r)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	result, err := h.service.History(no)
 	if err != nil {
 		fail(w, err)
 		return

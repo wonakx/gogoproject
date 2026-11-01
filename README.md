@@ -1,60 +1,68 @@
 # Go 모듈러 모노리스
 
-회원, 상품, 판매, 구매를 하나의 프로세스로 실행하는 HTTP API입니다. Go 표준 라이브러리만 사용합니다.
-
-## 실행 및 검증
-
-`go.mod`에 지정된 Go 버전으로 실행합니다.
+회원·상품·판매·구매를 한 프로세스에서 실행합니다. `dealer` 테이블 구조에 맞춘 도메인 모델과 메모리 저장소, HTTP API를 제공합니다. 표준 라이브러리만 사용합니다.
 
 ```sh
 go run ./cmd/server
-# 기본 :8080, 변경 예: HTTP_ADDR=:9090 go run ./cmd/server
+# 기본 :8080, 변경: HTTP_ADDR=:9090 go run ./cmd/server
 go test -race ./...
 go vet ./...
 ```
 
-## 디렉터리 구조
+## 구조와 책임
 
 ```text
-cmd/server/                    서버 실행, 종료 처리
-internal/app/                  모듈 조립, 모듈 간 어댑터, HTTP 라우팅
-internal/modules/
-  member/                      회원 등록, 조회, 이메일 중복 검사
-  product/                     상품 카탈로그 등록, 조회
-  sale/                        판매자·상품 연결, 판매가, 재고 관리
-  purchase/                    구매 생성, 가격 스냅샷, 구매 조회
-internal/platform/
-  fault/                       공통 오류 분류
-  identity/                    식별자 생성
+cmd/server/                         서버 실행·종료
+internal/app/                       모듈 조립, 모듈 간 어댑터, API 접두사
+internal/modules/{member,product,sale,purchase}/
+  model.go                          테이블에 대응하는 도메인 모델
+  service.go                        서비스 입력, 검증, 업무 흐름, 저장소 포트
+  memory.go                         저장소 구현과 원자적 데이터 변경
+  transport/http/
+    routes.go                       경로 등록
+    request.go                      모듈별 DTO, JSON 읽기, 숫자 경로 해석
+    handler.go                      HTTP 입력 → 서비스 호출 → 응답
+    response.go                     모듈별 오류·HTTP 응답
+internal/modules/sale/price.go       DECIMAL(10,2) 금액 타입
+internal/modules/purchase/history.go 구매 이력 모델
+internal/platform/                  오류 분류, nullable 값 복사 유틸리티
+database/                          스키마와 수동 마이그레이션 SQL
 ```
 
-각 모듈의 HTTP 어댑터는 다음과 같이 역할을 나눕니다. 공통 CRUD 래퍼는 사용하지 않습니다.
+다른 모듈의 저장소를 직접 사용하지 않습니다. 소비자가 정의한 인터페이스를 `app`의 어댑터로 연결합니다. 공통 CRUD 핸들러는 사용하지 않으며, HTTP 없이 서비스를 호출해도 동일한 업무 검증이 적용됩니다.
 
-| 파일 | 책임 |
-| --- | --- |
-| `transport/http/routes.go` | 경로와 핸들러 연결 |
-| `transport/http/request.go` | 모듈별 요청 DTO, JSON 문법·필드·본문 크기 검사 |
-| `transport/http/handler.go` | 경로 파라미터 추출, 요청을 서비스 입력으로 변환, 서비스 호출 |
-| `transport/http/response.go` | 도메인 오류를 HTTP 상태로 변환하고 JSON 응답 작성 |
-| `service.go` | HTTP와 무관한 입력 검증, 정규화, 업무 흐름 조정 |
-| `memory.go` | 저장·조회, 잠금 안에서 중복·재고 조건 확인과 변경 |
+## 테이블 반영
 
-예를 들어 JSON이 깨졌거나 모르는 필드가 들어온 것은 HTTP 어댑터가 거부하고, 이메일 형식이나 수량이 업무 규칙에 맞는지는 서비스가 판단합니다. 구매 서비스가 회원 확인과 재고 예약·주문 저장·실패 보상을 조정합니다. 재고 확인과 차감은 동시 구매에도 원자적으로 수행되도록 저장소에서 처리합니다.
+| 모듈 | 테이블 | 주요 변경 |
+| --- | --- | --- |
+| 회원 | `dealer.dt_member` | 숫자 `member_no`와 사용자 `id` 구분, `id` 유일성, nullable 연락처 |
+| 상품 | `dealer.dt_product` | 숫자 `product_no`, 유일한 `product_code`, nullable 이름·설명 |
+| 판매 | `dealer.dt_sale` | 판매자·상품 번호, 수량, 정확한 소수 금액, 상태·판매 기간 |
+| 구매 | `dealer.dt_purchase` | 판매·판매자·구매자 번호, 수량, 구매 상태·시각 |
+| 구매 이력 | `dealer.dt_purchase_history` | 구매 당시 데이터와 수량 스냅샷, nullable `purchase_no` |
 
-회원 수정은 HTTP DTO를 `member.UpdateInput`으로 변환합니다. 도메인 객체 생성과 정규화는 서비스가 담당하므로 HTTP 없이 서비스를 호출해도 같은 규칙이 적용됩니다.
+- `BIGINT`는 `int64`, `INT`는 `int32`, `DATETIME`은 `time.Time`입니다.
+- nullable 컬럼은 `*string`, `*time.Time`, `*int64`로 표현합니다. JSON에서는 `null`을 반환하며 빈 문자열과 구분합니다.
+- `*_no`는 저장소가 생성하고, `create_at`·`update_at`·`purchase_at`은 서버에서 관리합니다. 회원 수정 시 생성 시각은 유지합니다.
+- 회원 이메일은 유일하지 않습니다. 같은 이메일을 가진 회원을 허용합니다. 유일성 검사는 `id`와 `product_code`에 적용합니다.
+- 메모리 저장소의 문자열 중복 검사는 대소문자를 구분합니다. 실제 DB 도입 시 테이블 collation과 일치시켜야 합니다.
+- `price`는 내부적으로 1/100 단위 정수로 보관하며 JSON에서는 `"12000.50"`처럼 문자열로 받습니다. 실수와 지수 표기는 받지 않으며 양수 및 최대 `99999999.99`를 검증합니다.
+- 판매 생성 시 수량은 양수이며 `ACTIVE` 또는 `CLOSED` 상태를 받습니다. 구매 시 `ACTIVE`, 시작 시각 도달, 종료 시각 이전, 충분한 재고를 검사합니다.
+- 구매의 판매자는 판매 정보에서 가져옵니다. 자기 판매 구매를 거부하고 요청 수량만큼 재고를 원자적으로 차감합니다.
+- 구매 상태는 현재 `COMPLETED`입니다. 결제 완료를 뜻하는 것은 아니며, 현 단계의 구매 생성 완료 상태입니다. 상태 전이·취소는 아직 제공하지 않습니다.
+- 구매와 최초 이력은 저장소의 `CreateWithHistory`에서 함께 저장합니다. 저장 실패 시 재고를 복구합니다. 이력은 구매 모듈이 소유합니다.
 
-`internal/app/http.go`는 모듈 라우터를 조립하고 `/api/v1` 접두사를 한 번만 적용합니다. `/health`는 버전 없는 운영 경로입니다.
+## 승인된 스키마 추가
 
-각 모듈의 `service.go`는 모델, 유스케이스, 소비자 관점의 의존 인터페이스를 정의합니다. `memory.go`는 해당 모듈의 저장소 구현입니다. 외부 의존성이 추가되면 모델과 포트를 별도 파일로 분리할 수 있습니다.
+원래 테이블에 없던 다음 컬럼을 추가하는 구조입니다.
 
-### 모듈 경계
+- `dt_sale.sell_member_no BIGINT NOT NULL`
+- `dt_purchase.quantity INT NOT NULL`
+- `dt_purchase_history.quantity INT NOT NULL` — 이력에도 구매 당시 수량 보존
 
-- 다른 모듈의 패키지나 저장소를 직접 참조하지 않습니다. 회원·상품의 존재 확인, 판매 재고 예약 등 필요한 기능을 소비자 모듈의 인터페이스로 정의합니다.
-- `internal/app/app.go`만 모든 모듈을 조립하고 어댑터로 연결합니다. 각 모듈의 HTTP 어댑터도 저장소를 직접 사용하지 않고 자신의 서비스를 호출합니다.
-- 회원은 회원 정보, 상품은 카탈로그, 판매는 판매가와 재고, 구매는 주문을 소유합니다. 같은 상품을 여러 판매자가 서로 다른 가격과 재고로 판매할 수 있습니다.
-- 구매는 회원 존재 확인 → 판매 재고 예약 → 주문 저장 순서입니다. 주문에는 판매자, 상품, 구매 당시 단가와 총액을 보존합니다.
-- 저장소 구현은 동시 접근을 보호합니다. 판매 재고 확인과 차감은 하나의 잠금 안에서 수행하여 초과 판매를 방지합니다. 자기 상품 구매와 0 이하 수량, 총액 오버플로를 거부합니다.
-- 저장 실패 시 재고를 보상 복구합니다. 구매 저장소는 오류 반환 시 주문이 저장되지 않았다는 계약을 지켜야 합니다.
+새 DB의 전체 구조는 `database/schema.sql`에 있습니다. 이미 만든 테이블에는 `database/migrations/001_add_sale_owner_and_purchase_quantity.sql`로 nullable 컬럼을 추가한 뒤, 기존 데이터의 실제 판매자와 수량을 채우고 `002_require_sale_owner_and_purchase_quantity.sql`로 NOT NULL을 적용합니다. 기존 값은 임의로 추정하지 않습니다. 테이블이 비어 있다면 백필 없이 두 단계를 진행할 수 있습니다.
+
+**SQL은 실제 DB에 실행하지 않았습니다. 현재 서버는 계속 메모리 저장소를 사용하며 재시작하면 데이터가 사라집니다.** DB 드라이버·접속 설정·SQL 저장소는 아직 없습니다. DB를 연결할 때 모듈별 Repository를 구현하고, 구매·이력의 원자적 저장 및 재고의 조건부 갱신을 보장해야 합니다. 현재 프로세스 내부 보상은 서버 중단에 대한 영속적 트랜잭션을 대신하지 않습니다.
 
 ## API
 
@@ -62,56 +70,43 @@ internal/platform/
 | --- | --- | --- |
 | GET | `/health` | 상태 확인 |
 | POST | `/api/v1/members` | 회원 등록 |
-| GET | `/api/v1/members/{id}` | 회원 조회 |
-| PUT | `/api/v1/members/{id}` | 회원 이름·이메일 전체 수정 |
-| DELETE | `/api/v1/members/{id}` | 회원 삭제 (204, 본문 없음) |
+| GET | `/api/v1/members/{member_no}` | 회원 조회 |
+| PUT | `/api/v1/members/{member_no}` | 회원 전체 수정 |
+| DELETE | `/api/v1/members/{member_no}` | 회원 삭제 |
 | POST | `/api/v1/products` | 상품 등록 |
-| GET | `/api/v1/products/{id}` | 상품 조회 |
+| GET | `/api/v1/products/{product_no}` | 상품 조회 |
 | POST | `/api/v1/sales` | 판매 등록 |
-| GET | `/api/v1/sales/{id}` | 판매 및 남은 재고 조회 |
+| GET | `/api/v1/sales/{sale_no}` | 판매 조회 |
 | POST | `/api/v1/purchases` | 구매 생성 |
-| GET | `/api/v1/purchases/{id}` | 구매 조회 |
+| GET | `/api/v1/purchases/{purchase_no}` | 구매 조회 |
+| GET | `/api/v1/purchases/{purchase_no}/histories` | 구매 이력 조회 |
 
-생성은 201, 조회는 200을 반환합니다. 입력 오류는 400, 없는 리소스는 404, 이메일 중복이나 재고 부족은 409입니다. 오류 본문은 `{"error":"..."}`입니다. JSON을 읽을 때 1 MiB 읽기 제한을 적용합니다. 첫 번째 JSON 값만 처리하고 뒤에 붙은 JSON이나 다른 데이터는 검사하지 않고 무시합니다. 따라서 읽지 않은 뒷부분을 포함한 전체 본문 크기를 검증하는 것은 아닙니다. 알 수 없는 필드는 회원 등록에서는 무시하고, 그 외 요청에서는 거부합니다.
+생성 201, 조회·수정 200, 삭제 204(본문 없음), 입력 오류 400, 없는 데이터 404, 중복·재고 부족·판매 불가 409를 반환합니다. 경로는 양수 정수 PK입니다. 기존 UUID 경로와 `seller_id`, `buyer_id`, `unit_price`, `stock` 입력은 새 번호·컬럼명으로 변경되었습니다.
 
-가격은 원화 정수 금액(`int64`)입니다. 예를 들어 `12000`은 12,000원입니다. 구매는 단일 판매 건에 대한 주문이며 결제 처리는 포함하지 않습니다.
+날짜 입력은 시간대가 포함된 RFC3339 문자열입니다. 첫 JSON 값만 읽으며 뒤에 붙은 데이터는 무시합니다. JSON 읽기에는 1 MiB 제한이 적용되지만 읽지 않은 뒷부분까지 포함한 전체 본문 크기를 검사하지는 않습니다. 모르는 필드 처리 정책은 각 모듈의 request.go에 있습니다.
 
-### 요청 예시
+### 호출 예시
 
-아래 순서로 호출하고 응답의 `id`를 다음 요청에 넣습니다.
+응답의 번호를 다음 요청에 사용합니다. 아래 1·2는 새 메모리 저장소에서 순서대로 실행한 예시입니다.
 
 ```sh
-# 판매자 등록 → SELLER_ID
-curl -sS localhost:8080/api/v1/members -H 'Content-Type: application/json' \
-  -d '{"name":"판매자","email":"seller@example.com"}'
+curl localhost:8080/api/v1/members -H 'Content-Type: application/json' \
+  -d '{"id":"seller","email":null,"address":"Seoul","phone_number":null}'
 
-# 구매자 등록 → BUYER_ID
-curl -sS localhost:8080/api/v1/members -H 'Content-Type: application/json' \
-  -d '{"name":"구매자","email":"buyer@example.com"}'
+curl localhost:8080/api/v1/members -H 'Content-Type: application/json' \
+  -d '{"id":"buyer","email":"buyer@example.com"}'
 
-# 상품 등록 → PRODUCT_ID
-curl -sS localhost:8080/api/v1/products -H 'Content-Type: application/json' \
-  -d '{"name":"키보드","description":"기계식 키보드"}'
+curl localhost:8080/api/v1/products -H 'Content-Type: application/json' \
+  -d '{"product_code":"KEYBOARD-001","name":"키보드","description":null}'
 
-# 판매 등록 → SALE_ID
-curl -sS localhost:8080/api/v1/sales -H 'Content-Type: application/json' \
-  -d '{"seller_id":"SELLER_ID","product_id":"PRODUCT_ID","unit_price":12000,"stock":10}'
+curl localhost:8080/api/v1/sales -H 'Content-Type: application/json' \
+  -d '{"sell_member_no":1,"product_no":1,"name":"키보드 판매","quantity":10,"price":"12000.50","status":"ACTIVE","start_at":"2020-01-01T00:00:00Z","end_at":null}'
 
-# 구매 → PURCHASE_ID, total_price: 24000
-curl -sS localhost:8080/api/v1/purchases -H 'Content-Type: application/json' \
-  -d '{"buyer_id":"BUYER_ID","sale_id":"SALE_ID","quantity":2}'
+curl localhost:8080/api/v1/purchases -H 'Content-Type: application/json' \
+  -d '{"sale_no":1,"buy_member_no":2,"quantity":2}'
 
-# 남은 재고: 8
-curl -sS localhost:8080/api/v1/sales/SALE_ID
-curl -sS localhost:8080/api/v1/purchases/PURCHASE_ID
+curl localhost:8080/api/v1/purchases/1/histories
+curl localhost:8080/api/v1/sales/1
 ```
 
-## 저장소 교체 및 현재 범위
-
-메모리 저장소이므로 서버 재시작 시 모든 데이터가 사라집니다. DB 도입 시 각 모듈의 `Repository`를 구현하고 `app.New`의 조립을 변경합니다. 모듈별 테이블 소유권을 유지하고 다른 모듈의 테이블을 직접 조회하지 않습니다.
-
-현재 보상 복구는 프로세스 내부 실행에 한정됩니다. DB를 도입할 때는 구매 저장과 재고 차감의 원자성을 위한 트랜잭션 경계 또는 영속적인 예약·보상 처리가 필요합니다. 다중 서버에서는 DB 수준의 조건부 재고 갱신도 필요합니다.
-
-인증·인가, 결제, 취소, 배송, 목록·검색, 요청 멱등성은 아직 구현하지 않았습니다. 현재 ID는 요청 본문으로 받으므로 운영 서비스에서는 인증한 사용자 ID로 대체해야 합니다. 같은 구매 요청을 재전송하면 별도 주문이 만들어집니다.
-
-회원 수정은 URL의 ID를 기준으로 이름과 이메일을 모두 받습니다. 본문의 ID 필드는 허용하지 않습니다. 회원 삭제는 URL의 ID만 사용하며 JSON 본문은 필요하지 않습니다.
+회원 PUT은 `id`와 nullable 연락처 필드를 받아 전체 교체합니다. 생략한 nullable 필드는 NULL이 됩니다. 삭제 시 다른 모듈의 데이터는 연쇄 삭제하지 않습니다. 인증·인가, 결제, 배송, 목록 검색, 구매 요청 멱등성은 아직 구현하지 않았습니다.

@@ -7,7 +7,6 @@ import (
 	"example.com/gogoproject/internal/modules/member"
 )
 
-// handler holds the application service; it contains no business policy.
 type handler struct{ service *member.Service }
 
 func (h handler) create(w http.ResponseWriter, r *http.Request) {
@@ -16,39 +15,58 @@ func (h handler) create(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	result, err := h.service.Register(in.Name, in.Email)
+	result, err := h.service.Register(
+		member.CreateInput{
+			ID: in.ID,
+			Email: in.Email,
+			Address: in.Address,
+			PhoneNumber: in.PhoneNumber,
+		},
+	)
 	if err != nil {
 		fail(w, err)
 		return
 	}
 	respond(w, http.StatusCreated, result)
 }
-
 func (h handler) get(w http.ResponseWriter, r *http.Request) {
-	result, err := h.service.Get(r.PathValue("id"))
+	no, err := readNumber(r)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	result, err := h.service.Get(no)
 	if err != nil {
 		fail(w, err)
 		return
 	}
 	respond(w, http.StatusOK, result)
 }
-
 func (h handler) update(w http.ResponseWriter, r *http.Request) {
+	no, err := readNumber(r)
+	if err != nil {
+		fail(w, err)
+		return
+	}
 	in, err := readUpdateRequest(w, r)
 	if err != nil {
 		fail(w, err)
 		return
 	}
-	result, err := h.service.Update(member.UpdateInput{ID: r.PathValue("id"), Name: in.Name, Email: in.Email})
+	result, err := h.service.Update(member.UpdateInput{MemberNo: no, CreateInput: member.CreateInput{ID: in.ID, Email: in.Email, Address: in.Address, PhoneNumber: in.PhoneNumber}})
 	if err != nil {
 		fail(w, err)
 		return
 	}
 	respond(w, http.StatusOK, result)
 }
-
 func (h handler) delete(w http.ResponseWriter, r *http.Request) {
-	if err := h.service.Delete(r.PathValue("id")); err != nil {
+	no, err := readNumber(r)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	if err := h.service.Delete(no); err != nil {
 		fail(w, err)
 		return
 	}

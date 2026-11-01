@@ -1,36 +1,29 @@
-// Package purchase owns orders and orchestrates stock reservation through ports.
 package purchase
 
 import (
 	"errors"
-	"example.com/gogoproject/internal/platform/fault"
-	"example.com/gogoproject/internal/platform/identity"
 	"fmt"
+	"time"
+
+	"example.com/gogoproject/internal/platform/fault"
 )
 
-type Purchase struct {
-	ID         string `json:"id"`
-	BuyerID    string `json:"buyer_id"`
-	SaleID     string `json:"sale_id"`
-	ProductID  string `json:"product_id"`
-	SellerID   string `json:"seller_id"`
-	Quantity   int64  `json:"quantity"`
-	UnitPrice  int64  `json:"unit_price"`
-	TotalPrice int64  `json:"total_price"`
-}
-type Reservation struct {
-	ProductID, SellerID string
-	UnitPrice           int64
-}
-type Members interface{ RequireMember(string) error }
+const StatusCompleted = "COMPLETED"
+
+type Members interface{ RequireMember(int64) error }
 type Sales interface {
-	Reserve(saleID, buyerID string, quantity int64) (Reservation, error)
-	Release(saleID string, quantity int64) error
+	Reserve(saleNo, buyerNo int64, quantity int32) (sellerNo int64, err error)
+	Release(saleNo int64, quantity int32) error
 }
 type Repository interface {
-	// Create must leave no order persisted if it returns an error.
-	Create(Purchase) error
-	Get(string) (Purchase, error)
+	// CreateWithHistory persists both records atomically or leaves neither on error.
+	CreateWithHistory(Purchase) (Purchase, error)
+	Get(int64) (Purchase, error)
+	History(int64) ([]History, error)
+}
+type CreateInput struct {
+	SaleNo, BuyMemberNo int64
+	Quantity            int32
 }
 type Service struct {
 	repo    Repository
@@ -41,24 +34,36 @@ type Service struct {
 func NewService(repo Repository, members Members, sales Sales) *Service {
 	return &Service{repo: repo, members: members, sales: sales}
 }
-func (s *Service) Create(buyerID, saleID string, quantity int64) (Purchase, error) {
-	if buyerID == "" || saleID == "" || quantity <= 0 {
+func (s *Service) Create(in CreateInput) (Purchase, error) {
+	if in.SaleNo <= 0 || in.BuyMemberNo <= 0 || in.Quantity <= 0 {
 		return Purchase{}, fault.ErrInvalid
 	}
-	if err := s.members.RequireMember(buyerID); err != nil {
+	if err := s.members.RequireMember(in.BuyMemberNo); err != nil {
 		return Purchase{}, err
 	}
-	reserved, err := s.sales.Reserve(saleID, buyerID, quantity)
+	seller, err := s.sales.Reserve(in.SaleNo, in.BuyMemberNo, in.Quantity)
 	if err != nil {
 		return Purchase{}, err
 	}
-	p := Purchase{ID: identity.New(), BuyerID: buyerID, SaleID: saleID, ProductID: reserved.ProductID, SellerID: reserved.SellerID, Quantity: quantity, UnitPrice: reserved.UnitPrice, TotalPrice: reserved.UnitPrice * quantity}
-	if err := s.repo.Create(p); err != nil {
-		if releaseErr := s.sales.Release(saleID, quantity); releaseErr != nil {
+	now := time.Now().UTC().Truncate(time.Second)
+	p, err := s.repo.CreateWithHistory(Purchase{SaleNo: in.SaleNo, SellMemberNo: seller, Quantity: in.Quantity, BuyMemberNo: in.BuyMemberNo, PurchaseStatus: StatusCompleted, PurchaseAt: now, CreateAt: now})
+	if err != nil {
+		if releaseErr := s.sales.Release(in.SaleNo, in.Quantity); releaseErr != nil {
 			return Purchase{}, errors.Join(err, fmt.Errorf("stock compensation failed: %w", releaseErr))
 		}
 		return Purchase{}, err
 	}
 	return p, nil
 }
-func (s *Service) Get(id string) (Purchase, error) { return s.repo.Get(id) }
+func (s *Service) Get(no int64) (Purchase, error) {
+	if no <= 0 {
+		return Purchase{}, fault.ErrInvalid
+	}
+	return s.repo.Get(no)
+}
+func (s *Service) History(no int64) ([]History, error) {
+	if no <= 0 {
+		return nil, fault.ErrInvalid
+	}
+	return s.repo.History(no)
+}
